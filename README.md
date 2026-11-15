@@ -5,8 +5,8 @@ Script de PowerShell que consulta el **registro de auditoría unificado de Micro
 ## Qué hace
 
 1. **Crea una consulta de auditoría** (`POST /security/auditLog/queries`) filtrada por:
-   - Usuario (UPN).
-   - Rango de fechas: los últimos 30 días hasta el momento de ejecución (en UTC).
+   - Usuario o usuarios (UPN).
+   - Rango de fechas (por defecto, los últimos 30 días).
    - Tipo de registro: `sharePointFileOperation`.
    - Operaciones de eliminación:
      - `FileDeleted`, `FileRecycled`
@@ -14,7 +14,7 @@ Script de PowerShell que consulta el **registro de auditoría unificado de Micro
      - `FolderDeleted`, `FolderRecycled`
 2. **Espera a que la consulta termine**, revisando su estado cada 30 segundos mientras esté en `notStarted` o `running`.
 3. **Descarga todos los registros**, siguiendo la paginación (`@odata.nextLink`).
-4. **Exporta los resultados** a `eliminaciones_graph.csv` en el directorio actual.
+4. **Exporta los resultados** a CSV (por defecto, `eliminaciones_graph.csv` en el directorio actual).
 
 ## Requisitos
 
@@ -28,31 +28,36 @@ Script de PowerShell que consulta el **registro de auditoría unificado de Micro
 - Una cuenta con permiso delegado **`AuditLogsQuery.Read.All`** (requiere consentimiento de administrador) y un rol que permita leer los registros de auditoría (por ejemplo, *Audit Reader* o *Compliance Administrator* en Microsoft Purview).
 - La auditoría debe estar habilitada en el tenant.
 
-## Configuración
+## Parámetros
 
-Antes de ejecutar, edita el script y reemplaza `usuario@dominio.com` por el UPN del usuario a auditar. Aparece en dos lugares:
+| Parámetro | Obligatorio | Valor por defecto | Descripción |
+|---|---|---|---|
+| `-UserPrincipalName` | Sí | — | UPN de uno o varios usuarios a auditar |
+| `-Days` | No | `30` | Días hacia atrás a consultar (1–180). Se ignora si se indica `-StartDate` |
+| `-StartDate` | No | Ahora − `Days` | Inicio del rango |
+| `-EndDate` | No | Ahora | Fin del rango |
+| `-OutputPath` | No | `.\eliminaciones_graph.csv` | Ruta del CSV de salida |
+| `-PollSeconds` | No | `30` | Segundos entre comprobaciones del estado de la consulta |
+| `-TimeoutMinutes` | No | `60` | Tiempo máximo de espera antes de abortar |
 
-```powershell
-displayName              = "Eliminaciones - usuario@dominio.com"
-userPrincipalNameFilters = @("usuario@dominio.com")
-```
-
-Opcionalmente puedes ajustar:
-
-| Elemento | Valor por defecto | Cómo cambiarlo |
-|---|---|---|
-| Rango de fechas | Últimos 30 días | Modifica `.AddDays(-30)` en `filterStartDateTime` |
-| Operaciones | Eliminaciones y papelera | Edita la lista `operationFilters` |
-| Intervalo de espera | 30 segundos | Modifica `Start-Sleep -Seconds 30` |
-| Archivo de salida | `.\eliminaciones_graph.csv` | Cambia la ruta en `Export-Csv` |
+La ayuda completa está disponible con `Get-Help .\auditoria_usuarios.ps1 -Full`.
 
 ## Uso
 
 ```powershell
-.\auditoria_usuarios.ps1
+# Un usuario, últimos 30 días
+.\auditoria_usuarios.ps1 -UserPrincipalName usuario@dominio.com
+
+# Varios usuarios, últimos 7 días, salida personalizada
+.\auditoria_usuarios.ps1 -UserPrincipalName a@dominio.com, b@dominio.com -Days 7 -OutputPath C:\Temp\eliminaciones.csv
+
+# Rango de fechas concreto
+.\auditoria_usuarios.ps1 -UserPrincipalName usuario@dominio.com -StartDate 2026-10-01 -EndDate 2026-10-31
 ```
 
-Se abrirá una ventana de inicio de sesión de Microsoft. Tras autenticarte, el script mostrará el ID de la consulta y su estado hasta que finalice. Las consultas de auditoría pueden tardar varios minutos en completarse.
+Si no hay una sesión de Microsoft Graph activa con el permiso necesario, se abrirá una ventana de inicio de sesión; si ya existe, se reutiliza. El script mostrará el ID de la consulta y su estado hasta que finalice. Las consultas de auditoría pueden tardar varios minutos en completarse.
+
+El script se detiene con un error si la consulta falla o se cancela, o si supera `-TimeoutMinutes`. Si no hay resultados, muestra un aviso y no genera el CSV.
 
 Si la política de ejecución bloquea el script:
 
@@ -62,7 +67,7 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 
 ## Salida
 
-El archivo `eliminaciones_graph.csv` (UTF-8) contiene una fila por evento con las columnas:
+El archivo CSV (UTF-8) contiene una fila por evento, ordenadas por fecha, con las columnas:
 
 | Columna | Descripción |
 |---|---|
